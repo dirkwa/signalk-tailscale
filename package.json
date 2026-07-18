@@ -28,9 +28,16 @@
   "signalk": {
     "displayName": "Tailscale",
     "appIcon": "icon.svg",
-    "requires": ["signalk-container"]
+    "requires": [
+      "signalk-container"
+    ]
   },
-  "files": ["plugin/**/*", "public/**/*", "assets/**/*", "docs/**/*"],
+  "files": [
+    "plugin/**/*",
+    "public/**/*",
+    "assets/**/*",
+    "docs/**/*"
+  ],
   "engines": {
     "node": ">=22.5.0",
     "signalk": ">=2.24.0"
@@ -41,7 +48,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@module-federation/vite": "^1.15.0",
+    "@module-federation/vite": "~1.15.5",
     "@signalk/server-admin-ui-dependencies": "^2.23.0",
     "@signalk/server-api": "^2.24.0",
     "@types/express": "^5.0.0",

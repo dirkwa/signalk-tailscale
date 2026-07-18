@@ -122,3 +122,10 @@ configures serve.
   container on every settings edit.
 - The webapp's admin-CSS injection and favicon resolve through the
   `/signalk-tailscale/` base path (MF `base`), not the site root.
+- **`@module-federation/vite` is pinned to `~1.15.x`.** 1.16+ emits an
+  SSR-flavoured `remoteEntry.js` (extra `remoteEntry.ssr.js`, ~4× larger host
+  bundle) that the SignalK admin's module-federation runtime can't load —
+  symptom: `Could not load module signalk_tailscale` in the admin console, with
+  `remoteEntry.js` served fine (200). A working `remoteEntry.js` is ~3.3 KB with
+  no `*ssr*` files in `public/`. Dependabot ignores `>=1.16`; don't bump it
+  until the admin host supports the newer output.
