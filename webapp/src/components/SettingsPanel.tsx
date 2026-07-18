@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Card,
   CardBody,
@@ -36,11 +36,17 @@ export function SettingsPanel({ status }: Props) {
   const [routeErr, setRouteErr] = useState<string | null>(null)
   const [savingRoutes, setSavingRoutes] = useState(false)
 
-  // Seed the input from the currently-advertised route once it appears. Keyed
-  // on advertised.length so we don't clobber the user's edits every render.
+  // Seed the input from the currently-advertised routes exactly once, the first
+  // time they appear. Using a ref (not `routeInput === ''`) means that once the
+  // user has interacted, clearing the field to empty stays empty — so they can
+  // remove all advertised routes and Save an empty list.
+  const seededRef = useRef(false)
   useEffect(() => {
-    if (advertised.length > 0 && routeInput === '') setRouteInput(advertised.join(', '))
-  }, [advertised.length, advertised, routeInput])
+    if (!seededRef.current && advertised.length > 0) {
+      seededRef.current = true
+      setRouteInput(advertised.join(', '))
+    }
+  }, [advertised])
 
   useEffect(() => {
     setAcceptRoutes(status?.routes.accepted ?? false)

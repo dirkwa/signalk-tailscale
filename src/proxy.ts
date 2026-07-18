@@ -12,8 +12,13 @@ import type { IRouter, Request as ExpressRequest, Response as ExpressResponse } 
 
 // Hop-by-hop headers per RFC 7230 §6.1 (must NOT cross a proxy hop), plus
 // host (gets rewritten to upstream) and content-length (recomputed by
-// undici from the streamed body).
+// undici from the streamed body). We also strip cookie/authorization: SignalK
+// already authorized this request (these routes are admin-only), and the shim
+// is loopback-only with no auth of its own — forwarding the caller's SignalK
+// session cookie or bearer token to it would leak credentials for no benefit.
 const HOP_BY_HOP_REQUEST_HEADERS = new Set([
+  'authorization',
+  'cookie',
   'host',
   'connection',
   'keep-alive',

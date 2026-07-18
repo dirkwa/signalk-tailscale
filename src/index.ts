@@ -276,7 +276,14 @@ export default function (app: TailscaleServerAPI): Plugin {
       })
 
       // Update detection — delegated to signalk-container's central service.
+      // Both routes are container-only: in external-server mode there is no
+      // managed container to check or recreate, so short-circuit before touching
+      // the container manager.
       router.get('/api/update/check', async (_req: Request, res: Response) => {
+        if (currentSettings?.managedContainer === false) {
+          res.status(409).json({ error: 'Updates are unavailable in external-server mode' })
+          return
+        }
         const containers = getContainerManager()
         if (!containers) {
           res.status(503).json({ error: 'signalk-container not available' })
@@ -291,6 +298,10 @@ export default function (app: TailscaleServerAPI): Plugin {
       })
 
       router.post('/api/update/apply', async (req: Request, res: Response) => {
+        if (currentSettings?.managedContainer === false) {
+          res.status(409).json({ error: 'Updates are unavailable in external-server mode' })
+          return
+        }
         const containers = getContainerManager()
         if (!containers) {
           res.status(503).json({ error: 'signalk-container not available' })
@@ -394,10 +405,14 @@ export default function (app: TailscaleServerAPI): Plugin {
         )
         return
       }
-      client = new ShimClient(url)
-      containerAddress = url
+      // Only wire up `client` + `containerAddress` after readiness, so on
+      // failure the proxy isn't left pointing at an unreachable upstream
+      // (`/status` keeps reporting not-ready, and /api/* returns 503 not 502).
+      const pending = new ShimClient(url)
       try {
-        await client.waitForReady(15_000)
+        await pending.waitForReady(15_000)
+        client = pending
+        containerAddress = url
         await pushConfig()
         startConfigPushTimer()
         app.setPluginStatus(`Connected to external signalk-tailscale-server at ${url}`)

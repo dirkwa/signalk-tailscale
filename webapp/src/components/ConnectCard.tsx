@@ -25,8 +25,10 @@ export function ConnectCard({ status, onConnected }: Props) {
   // Render a QR for the current AuthURL.
   useEffect(() => {
     let cancelled = false
+    // Clear immediately on any authUrl change so a stale QR can't linger while
+    // the new one renders (or if the new authUrl is null).
+    setQrDataUrl(null)
     if (!authUrl) {
-      setQrDataUrl(null)
       return
     }
     QRCode.toDataURL(authUrl, { width: 240, margin: 1 })

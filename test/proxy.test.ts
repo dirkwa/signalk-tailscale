@@ -46,7 +46,8 @@ function appWith(base: string | null) {
   const app = express()
   app.use(express.json())
   // An explicit route that must win over the proxy's /api/.* catch-all.
-  app.get('/api/update/check', (_req, res) => {
+  app.get('/api/update/check', (req, res) => {
+    void req
     res.json({ explicit: true })
   })
   registerProxy(app, { getUpstreamBase: () => base })

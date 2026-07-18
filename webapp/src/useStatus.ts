@@ -19,17 +19,20 @@ export function useStatus(): StatusState {
 
   useEffect(() => {
     let cancelled = false
+    // The one-shot fetch and the SSE stream race; if an SSE frame arrives first
+    // (or during the fetch), the fetch's older snapshot must not overwrite it.
+    let receivedSseSnapshot = false
 
     getStatus()
       .then((s) => {
-        if (!cancelled) {
+        if (!cancelled && !receivedSseSnapshot) {
           setStatus(s)
           setError(null)
           setLoading(false)
         }
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && !receivedSseSnapshot) {
           setError(err instanceof Error ? err.message : String(err))
           setLoading(false)
         }
@@ -38,6 +41,7 @@ export function useStatus(): StatusState {
     const unsubscribe = subscribeStatus(
       (s) => {
         if (!cancelled) {
+          receivedSseSnapshot = true
           setStatus(s)
           setError(null)
           setLoading(false)

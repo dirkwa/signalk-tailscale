@@ -12,10 +12,13 @@ interface Props {
 function CopyLink({ url }: { url: string }) {
   const [copied, setCopied] = useState(false)
   const copy = () => {
-    // navigator.clipboard is typed as always-present; in an insecure context
-    // writeText rejects, which the rejection handler below swallows (the link
-    // text stays selectable as a fallback).
-    void navigator.clipboard.writeText(url).then(
+    // In an insecure context (plain http on a LAN IP) navigator.clipboard is
+    // undefined at runtime even though the DOM lib types it as always-present;
+    // read it through an unknown-typed view so the guard is genuinely nullable
+    // and we degrade to the selectable link instead of throwing.
+    const clipboard = (navigator as unknown as { clipboard?: Clipboard }).clipboard
+    if (!clipboard) return
+    void clipboard.writeText(url).then(
       () => {
         setCopied(true)
         setTimeout(() => {

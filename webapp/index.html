@@ -41,11 +41,18 @@
           [...cssFiles].map(
             (css) =>
               new Promise((resolve) => {
+                // Settle after 5s even if a stylesheet request stalls, so a slow
+                // admin never blocks the app bootstrap indefinitely.
+                const timeout = window.setTimeout(resolve, 5000)
+                const settle = () => {
+                  window.clearTimeout(timeout)
+                  resolve()
+                }
                 const link = document.createElement('link')
                 link.rel = 'stylesheet'
                 link.href = '/admin/' + css
-                link.onload = resolve
-                link.onerror = resolve
+                link.onload = settle
+                link.onerror = settle
                 document.head.appendChild(link)
               })
           )

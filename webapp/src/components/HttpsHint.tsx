@@ -12,14 +12,16 @@ const ENABLE_HTTPS_URL = 'https://login.tailscale.com/admin/dns'
 export function HttpsHint({ status }: { status: StatusSnapshot | null }) {
   if (!status) return null
 
+  // Only treat serve.lastError as our signal when it's HTTPS/cert-related —
+  // otherwise a generic serve error would shadow a genuine cert Health message
+  // (and those non-cert errors render on the Dashboard, not here).
   const serveErr = status.serve.lastError
+  const serveHttpsErr = serveErr && /https|cert/i.test(serveErr) ? serveErr : null
   const certHealth = status.health.find(
     (h) => /https|cert/i.test(h) && /enable|not (yet )?available|no cert/i.test(h)
   )
-  const message = serveErr ?? certHealth
-  // Only show for the HTTPS-pending flavour; other serve errors render on the
-  // Dashboard itself.
-  if (!message || !/https|cert/i.test(message)) return null
+  const message = serveHttpsErr ?? certHealth
+  if (!message) return null
 
   return (
     <Alert color="info">

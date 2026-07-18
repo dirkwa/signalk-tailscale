@@ -36,16 +36,22 @@ export class ShimClient {
     const deadline = Date.now() + timeoutMs
     let lastErr: unknown
     while (Date.now() < deadline) {
+      // Cap both the fetch timeout and the retry sleep by the time left, so we
+      // never overshoot the overall deadline on the final iteration.
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) break
       try {
         const res = await fetch(this.url('/api/health'), {
-          signal: AbortSignal.timeout(Math.min(5000, intervalMs * 4))
+          signal: AbortSignal.timeout(Math.max(1, Math.min(5000, intervalMs * 4, remaining)))
         })
         if (res.ok) return
         lastErr = new Error(`health returned ${res.status}`)
       } catch (err) {
         lastErr = err
       }
-      await new Promise((r) => setTimeout(r, intervalMs))
+      const sleep = Math.min(intervalMs, deadline - Date.now())
+      if (sleep <= 0) break
+      await new Promise((r) => setTimeout(r, sleep))
     }
     throw new Error(
       `signalk-tailscale-server not ready after ${timeoutMs}ms: ${
