@@ -1,0 +1,214 @@
+language: en-US
+
+reviews:
+  profile: assertive
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    ignore_title_keywords:
+      - "chore(release):"
+      - "chore(deps):"
+      - "chore(deps-dev):"
+      - "[skip review]"
+      - "WIP"
+    ignore_usernames:
+      - "release-please[bot]"
+      - "renovate[bot]"
+      - "dependabot[bot]"
+      - "github-actions[bot]"
+
+  path_filters:
+    - "!**/package-lock.json"
+    - "!**/yarn.lock"
+    - "!**/pnpm-lock.yaml"
+    - "!**/*.min.js"
+    - "!**/*.min.css"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/plugin/**"
+    - "!**/public/**"
+    - "!**/node_modules/**"
+
+  high_level_summary_instructions: |
+    Write summaries in present tense. Describe what the code does, not what
+    it did. Skip filler like "This PR" — go straight to the change.
+
+  path_instructions:
+    - path: '**/*'
+      instructions: |
+        ## Scope
+
+        Focus on files changed since `main`. Think about how changes interact
+        with the rest of the codebase, not just the diff in isolation.
+
+        signalk-tailscale is a **SignalK plugin + webapp** pair shipped in one
+        npm package — a zero-config boat VPN. It drives the companion container
+        `signalk-tailscale-server` (a separate repo/image) to run Tailscale.
+        It does two things:
+
+        1. **Plugin (`src/`, plain Node, runs in the SignalK server process)**
+           - Asks `signalk-container` to run the `signalk-tailscale-server`
+             container.
+           - Pushes desired config (device hostname, serve toggle, subnet
+             routes, and the computed serve-target candidates) to the
+             container's loopback REST shim via `POST /api/config`.
+           - Exposes a thin HTTP surface at `/plugins/signalk-tailscale/api/*`:
+             `/status`, `/api/update/*`, `/api/suggest-routes`, and a reverse
+             proxy that forwards everything else to the shim.
+        2. **Webapp (`webapp/`, Vite Module Federation + React 19 + reactstrap,
+           served via the `signalk-embeddable-webapp` keyword at
+           `/signalk-tailscale/`, exposing `./AppPanel`)**
+           - Tabs: Connect (login link + QR), Dashboard (URLs + peer count +
+             HTTPS hint), Settings (subnet router + updates + logout).
+           - Inherits SignalK admin look-and-feel by fetching
+             `/admin/.vite/manifest.json` and injecting the admin CSS into
+             `<head>` before React mounts.
+           - Live status via the shim's SSE stream (`useStatus`). All API calls
+             hit the plugin proxy — same origin, no CORS, inherits SignalK auth.
+
+        ## The one hard constraint (do not violate)
+
+        signalk-container grants no CapAdd / `/dev/net/tun` / sysctls, so
+        Tailscale runs in **userspace-networking mode**. Inbound traffic reaches
+        SignalK only via `tailscale serve`. Do NOT suggest TUN devices, kernel
+        forwarding, sysctls, capabilities, or privileged mode. Subnet routing IS
+        supported in userspace mode (netstack re-dials) — do not suggest
+        removing `advertiseRoutes` / route handling.
+
+        ## ESM / TypeScript strict / Node 22+ / Vite + React 19
+
+        - `"type": "module"` — relative imports use the `.js` suffix (NodeNext).
+          Do not suggest dropping it.
+        - eslint is `strictTypeChecked`; tsconfig is strict. Avoid `any`. The
+          webapp has its own `tsconfig.webapp.json` (JSX/DOM types).
+        - Node `>= 22.5.0`. Native fetch on the plugin side; browser fetch +
+          EventSource in the webapp.
+        - `argsIgnorePattern` / `varsIgnorePattern` is `^$` (NOT `^_`) — do NOT
+          suggest renaming unused params to `_props`; that does not satisfy this
+          config.
+        - Async React event handlers are sync wrappers
+          (`() => { void (async () => …)() }`) to satisfy `no-misused-promises`
+          / `no-confusing-void-expression`. Do not suggest attaching the async
+          function directly to `onClick`.
+
+        ## Plugin → container integration
+
+        - Plugin lifecycle (`start` / `stop`) calls into `signalk-container`'s
+          `globalThis.__signalk_containerManager`. It must wait for both the
+          manager to publish AND `getRuntime()` to return non-null — see
+          `waitForContainerManager()`. This guards a real load-order race; it is
+          NOT redundant.
+        - `TS_IMAGE`, `CONTAINER_NAME`, `API_PORT` are module-level constants.
+          Don't extract them as config unless asked.
+        - **NO explicit `extraHosts`** in `buildContainerConfig` — signalk-
+          container auto-maps `host.containers.internal` and *skips* it under
+          the `container:<self-id>` shared-netns strategy where Docker would
+          reject an explicit entry. Adding one breaks container creation in that
+          case. Do not suggest adding it.
+        - **Config flows via `POST /api/config`, NOT container env** — env
+          changes are drift-detected by signalk-container and would recreate
+          (churn) the container. Do not suggest moving config into env.
+        - `imageTag: "auto"` resolves to `TAILSCALE_SERVER_VERSION` in
+          `src/config/image-tag.ts` — bumped independently of the plugin
+          version when a new server image ships.
+
+        ## Security (important)
+
+        - Plugin routes registered directly on the router are **admin-only** by
+          SignalK's default (server PR #2498) — deliberately, since the
+          Tailscale AuthURL lets whoever opens it claim the boat into their
+          tailnet. Do NOT suggest `router.access()` (it would loosen this).
+        - `src/proxy.ts` strips `cookie` + `authorization` before forwarding to
+          the shim (the request is already authorized; the loopback shim has no
+          auth). Do not suggest forwarding them.
+
+        ## Proxy module (`src/proxy.ts`)
+
+        - Streams body bytes both directions (Readable.fromWeb + pipeline); does
+          not buffer.
+        - Hop-by-hop headers must be stripped per RFC 7230 — don't suggest
+          "simpler" forwarders that ignore this.
+        - Preserves the scheme on `containerAddress` (http vs https) so
+          external-mode HTTPS upstreams aren't downgraded.
+        - Registered LAST so explicit routes (`/api/update/*`,
+          `/api/suggest-routes`) match first.
+
+        ## targetCandidates (`src/targetCandidates.ts`)
+
+        - Ordered serve-target candidates the shim probes IN ORDER: 127.0.0.1 →
+          host.containers.internal → host.docker.internal → non-internal host
+          IPv4s → hostname. Order encodes deployment preference — don't reorder.
+        - Container-bridge nets (10.88.x / 172.17.x) are filtered out. The shim
+          validates each candidate (SignalK hello), so wrong guesses are
+          rejected — the plugin can afford to over-offer.
+
+        ## Webapp conventions
+
+        - **In-memory tab state**, not react-router and not hash routing — the
+          admin owns the URL hash. Don't suggest pulling in react-router-dom or
+          writing the hash.
+        - **API envelope unwrap** in `webapp/src/api.ts` — the shim wraps
+          responses in `{success, data | error, timestamp}`; `unwrap<T>` throws
+          on `success:false` (and on non-JSON bodies) so the UI sees a real
+          `Error`. Don't suggest callers re-check `success`.
+        - **`ReturnType<typeof setTimeout>`** for timer handles in browser code,
+          not `NodeJS.Timeout`.
+        - **CSS bootstrap before React mount** — `webapp/index.html` awaits the
+          admin-CSS `<link>` load (with a 5s timeout fallback) before importing
+          `main.tsx`. Intentional; styles must be present on first paint.
+        - **Discriminated CSS-shape handling** — the admin Vite manifest exposes
+          CSS either as a top-level `.css`-suffixed `.file` OR as a `.css` array
+          on entries. Both branches must be kept.
+        - Admin-CSS links and the favicon resolve through the
+          `/signalk-tailscale/` base path (MF `base`), not the site root.
+        - **No new top-level dependencies** without justification. Pull from
+          `reactstrap` first. Every dep is a maintenance liability on a Pi.
+
+        ## Echo comments
+
+        Flag any comment that merely restates what the code already says.
+        Replace with comments explaining *why*, not *what*. Or delete.
+
+        ## Documentation drift risk
+
+        Flag any `.md` file that contains: specific code snippets / signatures /
+        config values likely to fall out of sync; step-by-step build instructions
+        that shadow the code; or implementation-status / "currently X" wording.
+        Build narratives belong in PR descriptions, not repo docs. (AGENTS.md is
+        the intended exception — it is the agent-orientation doc.)
+
+        ## Leftover crumbs from intermediate commits
+
+        Flag references in the diff to symbols, files, or approaches that no
+        longer exist on this branch — stale function names in comments, TODOs
+        from a superseded approach, etc.
+
+        ## Unchecked items in test plans
+
+        If the PR description has a checklist with unchecked items, flag it.
+
+        ## Commit / PR conventions
+
+        - Conventional commits (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`,
+          `test:`, `build:`, `ci:`). Imperative mood, <=72 char subject.
+        - PR title becomes the squash commit subject — meaningful one-liner.
+        - **No AI attribution** in commits, PR bodies, or code. Don't mention
+          Claude / AI or add `Co-Authored-By` trailers.
+        - **No version bumps** in feature/fix PRs — only in dedicated
+          `chore(release):` PRs when explicitly asked.
+
+        ## What NOT to flag (intentional)
+
+        - Userspace-networking mode + `tailscale serve` as the only inbound path
+          — mandatory (see the hard constraint).
+        - Subnet routing in userspace mode — supported; not a bug.
+        - NO `extraHosts` in the container config — required for the shared-netns
+          strategy.
+        - Config via `POST /api/config` instead of env — required (drift/churn).
+        - Admin-only routes with no custom middleware — the AuthURL is sensitive.
+        - The `waitForContainerManager` dual-check polling — guards a real race.
+        - In-memory tab state instead of a router — chosen on purpose.
+        - The `webapp/src/api.ts` envelope unwrap + throw-on-`success:false`.
+        - Sync-wrapper async event handlers — required by the lint config.
+        - `as const` literals in discriminated-union construction.
