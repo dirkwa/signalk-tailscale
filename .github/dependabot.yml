@@ -16,6 +16,12 @@ updates:
       # Allow updates within the v22.x line; ignore v23+.
       - dependency-name: "@types/node"
         versions: [">=23"]
+      # @module-federation/vite >=1.16 emits an SSR-flavoured remoteEntry.js
+      # (remoteEntry.ssr.js + a larger host bundle) that the SignalK admin's
+      # module-federation runtime can't load ("Could not load module
+      # signalk_tailscale"). Stay on 1.15.x until the admin host supports it.
+      - dependency-name: "@module-federation/vite"
+        versions: [">=1.16"]
 
   - package-ecosystem: github-actions
     directory: "/"
