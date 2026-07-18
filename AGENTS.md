@@ -63,6 +63,49 @@ config.
 - `build:all` = lint + build (plugin tsc + webapp typecheck + vite) + vitest.
 - Tests mock the container/CLI; no real Tailscale needed.
 
+## Lifecycle (how the two parts stay in sync)
+
+`start()` deep-merges schema defaults (SignalK doesn't seed them), then
+`asyncStart()`: waits for `__signalk_containerManager` (≤120s, alphabetical load
+order races it), self-heals a drifted image via `recreate()`, resolves the shim
+address via `resolveContainerAddress` (+ `listContainers().ports` fallback),
+health-polls until ready, then pushes desired config and arms a 60s re-push
+timer. `client` stays null until health passes so `/status` reports truthfully.
+`stop()` = `containers.stop()` — drops the VPN but the shim never logs out, so
+re-enable reconnects with no new login. External-server mode (`managedContainer:
+false`) skips the container and points at `externalUrl`.
+
+The plugin computes serve-target candidates because only it can see the host's
+interfaces — the container sees only its own netstack. It pushes them (+ hostname
+/ routes / enableServe) to `POST /api/config`; the shim's reconciler probes and
+configures serve.
+
+## Security
+
+- Plugin routes registered directly on the router are **admin-only** by SignalK's
+  default (server PR #2498) — exactly right, since the Tailscale AuthURL lets
+  whoever opens it claim the boat into *their* tailnet. Do NOT switch to
+  `router.access()`.
+- The proxy strips `cookie` + `authorization` before forwarding to the shim: the
+  request is already authorized, and the loopback shim has no auth of its own, so
+  forwarding SignalK session credentials would leak them for no benefit.
+
+## Build & release
+
+- `npm run build:all` = lint (strictTypeChecked) + build (plugin `tsc` → `plugin/`
+  + webapp typecheck + `vite build` → `public/`) + vitest (16 tests).
+- `npm run dev` — vite dev server for the webapp; point `SIGNALK_DEV_URL` at a
+  running SignalK to proxy `/plugins` + `/admin`.
+- npm publish is **OIDC trusted-publishing** (`publish.yml`, `id-token: write`,
+  `npm publish --provenance`, no NPM_TOKEN) — requires the package's trusted
+  publisher to be configured on npmjs.com (this repo + workflow). Push a `vX.Y.Z`
+  tag to release; keep the tag == `package.json` version. `public/` and `plugin/`
+  are gitignored but packed at publish time via `prepublishOnly: npm run build`
+  and the `files` allowlist.
+- When a new `signalk-tailscale-server` image ships, bump `TAILSCALE_SERVER_VERSION`
+  in [src/config/image-tag.ts](src/config/image-tag.ts) (what `imageTag: "auto"`
+  resolves to) — independent of this plugin's own version.
+
 ## Gotchas verified on real hardware
 
 - NO explicit `extraHosts` in the container config — signalk-container auto-maps
@@ -72,5 +115,5 @@ config.
 - Config flows to the shim via `POST /api/config`, NOT container env — env
   changes are drift-detected by signalk-container and would recreate (churn) the
   container on every settings edit.
-- Plugin routes are admin-only by SignalK's default (PR #2498) — do NOT use
-  `router.access()`, which would loosen that. The AuthURL is sensitive.
+- The webapp's admin-CSS injection and favicon resolve through the
+  `/signalk-tailscale/` base path (MF `base`), not the site root.
