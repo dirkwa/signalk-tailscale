@@ -63,7 +63,14 @@ interface Envelope<T> {
 }
 
 async function unwrap<T>(res: Response, path: string): Promise<T> {
-  const body = (await res.json()) as Envelope<T>
+  let body: Envelope<T>
+  try {
+    body = (await res.json()) as Envelope<T>
+  } catch {
+    // e.g. a proxy 502/503 that returns HTML or an empty body — surface the
+    // status rather than an opaque JSON-parse error.
+    throw new Error(`${path}: HTTP ${res.status} returned a non-JSON response`)
+  }
   if (!res.ok || !body.success) {
     throw new Error(body.error?.message ?? `${path}: HTTP ${res.status}`)
   }

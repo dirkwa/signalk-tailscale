@@ -173,6 +173,9 @@ export function SettingsPanel({ status }: Props) {
               value={routeInput}
               placeholder="192.168.0.0/24"
               onChange={(e) => {
+                // Any edit counts as initialized, so a later (delayed) advertised
+                // -routes snapshot won't overwrite what the user typed.
+                seededRef.current = true
                 setRouteInput(e.target.value)
               }}
             />

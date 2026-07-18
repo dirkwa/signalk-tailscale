@@ -3,7 +3,11 @@
 ## Who can reach what
 
 - **The container's REST shim** is bound to loopback / the shared user network
-  by signalk-container. No browser ever talks to it directly.
+  by signalk-container in managed-container mode. No browser ever talks to it
+  directly. In external-server mode (`externalUrl`), signalk-container does NOT
+  enforce that binding — the operator is responsible for ensuring the external
+  shim is reachable only by trusted plugin infrastructure (e.g. a private LAN or
+  loopback), since it has no auth of its own.
 - **The webapp** reaches the shim only through the plugin's reverse proxy at
   `/plugins/signalk-tailscale/api/*`, on the SignalK origin. Those routes are
   **admin-only** by SignalK's default (server PR #2498) — this is deliberate:

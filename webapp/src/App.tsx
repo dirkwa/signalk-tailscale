@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Container, Nav, NavItem, NavLink, Spinner, Alert } from 'reactstrap'
 import { useStatus } from './useStatus'
 import { ConnectCard } from './components/ConnectCard'
@@ -18,8 +18,17 @@ const ROUTES: { id: Route; label: string }[] = [
 export function App() {
   const { status, error, loading } = useStatus()
   const running = status?.backendState === 'Running'
-  // Land on Dashboard once connected; Connect while logging in.
+  // Start on Connect; jump to Dashboard the first time we see Running (e.g. the
+  // node was already logged in when the webapp opened). Only auto-advances while
+  // still on Connect, so it never overrides a manual Settings/Connect choice.
   const [route, setRoute] = useState<Route>('connect')
+  const autoAdvanced = useRef(false)
+  useEffect(() => {
+    if (running && !autoAdvanced.current) {
+      autoAdvanced.current = true
+      setRoute((r) => (r === 'connect' ? 'dashboard' : r))
+    }
+  }, [running])
 
   return (
     <Container className="py-4">

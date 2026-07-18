@@ -23,10 +23,14 @@ export function HttpsHint({ status }: { status: StatusSnapshot | null }) {
   const message = serveHttpsErr ?? certHealth
   if (!message) return null
 
+  // Only claim "reachable over http now" when the http listener is actually up.
+  const httpUp = Boolean(status.serve.httpUrl)
+
   return (
     <Alert color="info">
-      <strong>One-time step to enable HTTPS.</strong> Your boat is reachable over http now. For a
-      padlock (https://), turn on HTTPS certificates for your tailnet:{' '}
+      <strong>One-time step to enable HTTPS.</strong>{' '}
+      {httpUp && 'Your boat is reachable over http now. '}For a padlock (https://), turn on HTTPS
+      certificates for your tailnet:{' '}
       <a className="alert-link" href={ENABLE_HTTPS_URL} target="_blank" rel="noreferrer">
         Enable HTTPS in the Tailscale admin console ↗
       </a>
