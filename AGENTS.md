@@ -53,6 +53,11 @@ config.
   SettingsPanel (subnet router + updates + logout danger zone). Status is live
   via the shim's SSE stream (`useStatus`).
 
+## Workflow
+
+- **Changes go through a pull request** — branch off latest `main`, push, open a
+  PR. Do not push directly to `main` (CI + CodeRabbit run on the PR).
+
 ## Conventions (shared with signalk-backup)
 
 - prettier: no semi, single quotes, no trailing comma, width 100.
