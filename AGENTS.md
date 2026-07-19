@@ -35,10 +35,17 @@ config.
   `/api/suggest-routes` routes, and the proxy registered LAST. Mirrors
   signalk-backup's index.ts closely.
 - [src/targetCandidates.ts](src/targetCandidates.ts) — the deployment-critical
-  piece. Ordered serve-target candidates (127.0.0.1 → host.containers.internal →
-  host.docker.internal → host LAN IPs → hostname) the shim probes in order.
+  piece. Ordered serve-target candidates (host-major: 127.0.0.1 →
+  host.containers.internal → host.docker.internal → host LAN IPs → hostname),
+  each crossed with SignalK's endpoints. SignalK can listen on any HTTP port
+  and/or HTTPS port — `resolveSignalKEndpoints` in index.ts mirrors
+  signalk-server/src/ports.ts (`httpPort = env.PORT||settings.port||3000`,
+  `sslPort = env.SSLPORT||settings.sslport||3443`; `ssl:true` → HTTPS on sslPort
+  + HTTP on httpPort). HTTP is offered first (simplest for serve+probe).
   `suggestSubnetRoutes` for the SettingsPanel. Container bridges (10.88/172.17)
-  are filtered out.
+  are filtered out. NOTE: the shim's probe/serve currently handle plain HTTP
+  upstreams; HTTPS-only SignalK (no HTTP port reachable) needs server-side
+  `https+insecure://` serve support — a follow-up.
 - [src/shim-client.ts](src/shim-client.ts) — typed client for the container's
   REST API (health/status/config/login/logout).
 - [src/proxy.ts](src/proxy.ts) — `/plugins/signalk-tailscale/api/*` → shim.

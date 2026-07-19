@@ -108,13 +108,37 @@ async function resolveActualAddress(
   return null
 }
 
-/** SignalK's own HTTP port, for computing serve-target candidates. */
-function resolveSignalKPort(app: TailscaleServerAPI): number {
-  const fromSettings = (app as unknown as { config?: { settings?: { port?: number } } }).config
-    ?.settings?.port
-  if (typeof fromSettings === 'number' && fromSettings > 0) return fromSettings
-  const fromEnv = Number(process.env['PORT'])
-  return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 3000
+/**
+ * SignalK's own listening endpoints, in the order the shim should prefer them
+ * for `tailscale serve`. Mirrors signalk-server's src/ports.ts:
+ *   - httpPort  = env.PORT    || settings.port    || 3000
+ *   - sslPort   = env.SSLPORT || settings.sslport || 3443
+ *   - ssl:true  → HTTPS on sslPort (primary) + HTTP on httpPort (redirect)
+ *   - ssl:false → HTTP on httpPort only
+ * We ALWAYS include the HTTP endpoint (serve → plain http is simplest and the
+ * probe uses plain http), and the HTTPS endpoint too when ssl is on, so a
+ * deployment that only exposes HTTPS still works. The shim probes them in order.
+ */
+function resolveSignalKEndpoints(app: TailscaleServerAPI): Array<{ scheme: string; port: number }> {
+  const settings =
+    (
+      app as unknown as {
+        config?: { settings?: { port?: number; ssl?: boolean; sslport?: number } }
+      }
+    ).config?.settings ?? {}
+
+  const num = (v: unknown, envKey: string, dflt: number): number => {
+    const fromEnv = Number(process.env[envKey])
+    if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv
+    return typeof v === 'number' && v > 0 ? v : dflt
+  }
+  const httpPort = num(settings.port, 'PORT', 3000)
+  const sslPort = num(settings.sslport, 'SSLPORT', 3443)
+
+  // HTTP first (simplest for serve/probe); add HTTPS when ssl is enabled.
+  const out: Array<{ scheme: string; port: number }> = [{ scheme: 'http', port: httpPort }]
+  if (settings.ssl === true) out.push({ scheme: 'https', port: sslPort })
+  return out
 }
 
 export default function (app: TailscaleServerAPI): Plugin {
@@ -155,7 +179,7 @@ export default function (app: TailscaleServerAPI): Plugin {
   const buildDesiredConfig = (settings: Config): DesiredConfig => ({
     deviceHostname: settings.deviceHostname.trim(),
     enableServe: settings.enableServe,
-    serveTargetCandidates: computeTargetCandidates(resolveSignalKPort(app)),
+    serveTargetCandidates: computeTargetCandidates(resolveSignalKEndpoints(app)),
     advertiseRoutes: settings.advertiseRoutes,
     acceptRoutes: settings.acceptRoutes
   })
