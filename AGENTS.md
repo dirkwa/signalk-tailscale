@@ -129,27 +129,37 @@ configures serve.
   `remoteEntry.js` served fine (200). A working `remoteEntry.js` is ~3.3 KB with
   no `*ssr*` files in `public/`. Dependabot ignores `>=1.16`; don't bump it
   until the admin host supports the newer output.
-- **`main.tsx` imports `react-dom/client` dynamically** (`await
-  import('react-dom/client')`), NOT statically, and it is NOT in the MF `shared`
-  map. A static `import { createRoot } from 'react-dom/client'` in the SPA entry
-  gets registered as a top-level MF shared module for the whole remote; the
-  SignalK admin host provides `react-dom` but not the `react-dom/client`
-  subpath, so the auto-generated stub throws `[Module Federation] Shared module
-  'react-dom/client' must be provided by host` at remote init and the panel
-  never mounts. Do NOT re-add a `react-dom/client` share entry (bundling it
-  ships a second react-dom-client → `Cannot read properties of undefined
-  (reading 'S')` double-runtime crash) and do NOT revert `main.tsx` to a static
-  import. `main.tsx` is dev-only (`npm run dev`); the admin loads `./AppPanel`,
-  which never touches `react-dom/client`. Verified by loading the panel in a
-  real SignalK admin (2.28.x) headless — see the E2E note below.
+- **`main.tsx` loads `react-dom/client` via a NON-analyzable dynamic import**
+  (computed specifier + `/* @vite-ignore */`), and it is NOT in the MF `shared`
+  map. Verified in-browser (2.28 + 2.30 admin): the host registers `react` and
+  `react-dom` as shares but **NOT the `react-dom/client` subpath**. If MF's build
+  scan sees `react-dom/client` anywhere (a static import, OR a plain
+  `import('react-dom/client')` — both are scanned), it registers it as a shared
+  module for the remote; with no host provider the stub throws `[Module
+  Federation] Shared module 'react-dom/client' must be provided by host` and the
+  panel never mounts. Two dead ends that were tried and FAILED — do not repeat:
+  (1) a plain dynamic `import('react-dom/client')` — still scanned, still throws;
+  (2) giving `react-dom/client` a bundled share fallback (`import:
+  'react-dom/client'`, singleton true or false) — ships a react-dom-client bound
+  to a private react-dom → `TypeError: Cannot read properties of undefined
+  (reading 'S')` double-runtime crash. The ONLY working fix is to hide the
+  specifier from the scan (`const s = 'react-dom' + '/client'; import(/*
+  @vite-ignore */ s)`), which drops the share entirely. `main.tsx` is dev-only
+  (`npm run dev`); the admin loads `./AppPanel`, which never uses `createRoot`.
+  Verified end-to-end against a real 2.30.0 admin (see the E2E note below).
 
 ## Local E2E (load the panel in a real admin)
 
 The MF-in-real-admin failures above only surface when the panel is loaded by an
-actual SignalK admin host — unit tests won't catch them. To reproduce/verify:
-run a local `signalk-server` (e.g. `master-signalk-server`, a throwaway `-c`
-dir) with this plugin symlinked into the config dir's `node_modules`, then drive
-`/admin/#/e/signalk_tailscale` with a headless browser (Playwright) and assert
-the panel text renders (`SignalK Tailscale`, `Connect`/`Dashboard`/`Settings`)
-with no `Module Federation` console error. `/api/status` returning 503 there is
-expected (no companion container in the harness) — the webapp handles it.
+actual SignalK admin host — unit tests won't catch them (16 unit tests passed
+through all three broken attempts). To reproduce/verify: run a local
+`signalk-server` (a 2.30.x checkout works; a throwaway `-c` dir) with this plugin
+symlinked into the config dir's `node_modules`, `npm run build:webapp`, then
+drive `/admin/#/e/signalk_tailscale` with a headless browser (Playwright) and
+assert the panel text renders (`SignalK Tailscale`, `Connect`/`Dashboard`/
+`Settings`) with no `Module Federation` / `reading 'S'` console error.
+`/api/status` returning 503 there is expected (no companion container in the
+harness) — the webapp handles it gracefully. To see what shares the host
+actually provides, evaluate `window.__FEDERATION__.__INSTANCES__[0]
+.shareScopeMap.default` in-page after loading the panel route — that's how the
+`react-dom/client`-absent-from-host fact was established.
