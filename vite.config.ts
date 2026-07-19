@@ -26,17 +26,6 @@ export default defineConfig({
         // import: false prevents bundling a second React copy that breaks useState.
         react: { singleton: true, requiredVersion: '^19.0.0', import: false },
         'react-dom': { singleton: true, requiredVersion: '^19.0.0', import: false },
-        // react-dom/client is a distinct share key. Without an explicit entry MF
-        // derives a host-only stub (inheriting react-dom's import:false) and
-        // throws "Shared module 'react-dom/client' must be provided by host" on
-        // admin builds that only register `react-dom`. Bundle a small fallback
-        // (import: 'react-dom/client') so it resolves regardless — same approach
-        // as the jsx-runtime shares below.
-        'react-dom/client': {
-          singleton: true,
-          requiredVersion: '^19.0.0',
-          import: 'react-dom/client'
-        },
         'react/jsx-runtime': {
           singleton: true,
           requiredVersion: '^19.0.0',
