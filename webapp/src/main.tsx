@@ -1,18 +1,23 @@
 import { StrictMode } from 'react'
 import { App } from './App'
 
-// This standalone entry is ONLY used by `npm run dev` (index.html) — the
-// SignalK admin loads ./AppPanel via Module Federation, not this file. Import
-// react-dom/client dynamically so it never becomes a top-level MF shared
-// module: a static `import { createRoot } from 'react-dom/client'` gets
-// registered as a shared dep for the whole remote, and the admin host provides
-// `react-dom` but not the `react-dom/client` subpath — so the auto-generated
-// stub throws "must be provided by host" at remote init.
+// This standalone entry is ONLY used by `npm run dev` (index.html). The SignalK
+// admin loads ./AppPanel via Module Federation, never this file.
+//
+// react-dom/client is loaded through a NON-analyzable dynamic import (computed
+// specifier + @vite-ignore) so the Module Federation build scan never sees it
+// as a dependency. Both a static import AND a plain dynamic
+// `import('react-dom/client')` get registered as a shared module for the whole
+// remote; the admin host provides `react-dom` but NOT the `react-dom/client`
+// subpath, so the auto-generated share stub throws "must be provided by host"
+// at remote init and the panel never mounts. Hiding it from the scan removes
+// the share entirely.
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('signalk-tailscale: #root element missing in index.html')
 
-void import('react-dom/client').then(({ createRoot }) => {
-  createRoot(rootEl).render(
+const clientSpecifier = 'react-dom' + '/client'
+void import(/* @vite-ignore */ clientSpecifier).then((m: typeof import('react-dom/client')) => {
+  m.createRoot(rootEl).render(
     <StrictMode>
       <App />
     </StrictMode>
