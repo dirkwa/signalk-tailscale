@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { SCHEMA_DEFAULTS, ConfigSchema } from '../src/config/schema.js'
-import { resolveImageTag, AUTO_TAG } from '../src/config/image-tag.js'
+import { resolveImageTag, AUTO_TAG, isFloatingTag } from '../src/config/image-tag.js'
 
 describe('SCHEMA_DEFAULTS', () => {
   it('hard-enables the zero-config behaviour', () => {
@@ -29,5 +29,20 @@ describe('resolveImageTag', () => {
   it('passes an explicit tag through unchanged', () => {
     expect(resolveImageTag('0.2.0')).toBe('0.2.0')
     expect(resolveImageTag('latest')).toBe('latest')
+  })
+})
+
+describe('isFloatingTag', () => {
+  it('treats semver tags as pinned (not floating)', () => {
+    expect(isFloatingTag('0.1.2')).toBe(false)
+    expect(isFloatingTag('v0.1.2')).toBe(false)
+    expect(isFloatingTag('1.2.3-rc.1')).toBe(false)
+  })
+
+  it('treats latest / non-semver as floating', () => {
+    expect(isFloatingTag('latest')).toBe(true)
+    expect(isFloatingTag('edge')).toBe(true)
+    expect(isFloatingTag('main')).toBe(true)
+    expect(isFloatingTag(resolveImageTag('auto'))).toBe(true)
   })
 })

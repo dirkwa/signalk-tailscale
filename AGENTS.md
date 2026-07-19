@@ -116,10 +116,15 @@ configures serve.
   and the `files` allowlist.
 - `imageTag: "auto"` resolves to `:latest` (see
   [src/config/image-tag.ts](src/config/image-tag.ts)), so a new
-  `signalk-tailscale-server` release reaches boats on the next pull/recreate —
-  no plugin bump needed. The update service reports a `floating` tag and detects
-  updates by image digest (not semver). Users who want a fixed version pin
-  `imageTag` to a concrete tag in plugin config.
+  `signalk-tailscale-server` release reaches boats — no plugin bump needed.
+  **Floating tags need pull-on-start** (`isFloatingTag`): a plain image-NAME
+  compare can't see drift when the tag is `:latest` (name always matches), and
+  the locally-cached `:latest` goes stale — so a bare server restart would keep
+  running the old image. `asyncStart` therefore, for a floating tag: (1)
+  `pullImage(:latest)` first (offline-tolerant — falls back to cache), then (2)
+  recreates if the running container's **digest** ≠ the freshly-pulled tag's
+  digest (via `getImageDigest`). Pinned semver tags keep the cheap name compare.
+  Users who want a fixed version pin `imageTag` to a concrete tag.
 
 ## Gotchas verified on real hardware
 
