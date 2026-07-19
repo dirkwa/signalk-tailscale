@@ -1,47 +1,54 @@
 import { networkInterfaces } from 'node:os'
 import { hostname } from 'node:os'
 
+/** A SignalK listening endpoint: scheme (http/https) + port. */
+export interface SignalKEndpoint {
+  scheme: string
+  port: number
+}
+
 /**
  * Compute the ordered list of serve-target candidates the shim will probe (in
  * order) to find a working SignalK endpoint. The shim validates each with
  * `GET <candidate>/signalk` and requires a SignalK hello, so wrong guesses are
  * rejected rather than silently serving the wrong thing.
  *
- * Order matters — it encodes deployment preference (verified on rootless
- * podman/pasta in the Phase 0 spike, where #2/#3 both reached the host):
- *   1. http://127.0.0.1:<skPort>            — wins under the shared-netns
- *      strategy (container:<self-id>); rejected elsewhere by probe validation.
- *   2. http://host.containers.internal:<p>  — bare-metal + installer host-net
- *      (podman host-gateway → host IP). Podman also aliases host.docker.internal.
- *   3. http://host.docker.internal:<p>      — docker deployments.
- *   4. http://<ip>:<p> for each non-internal IPv4 — host LAN IPs (bare-metal/
- *      installer) or SK-container IPs (bridge, reachable on the shared net).
- *   5. http://<HOST_HOSTNAME>:<p>           — last resort via name resolution.
+ * SignalK can listen on any HTTP port and/or HTTPS port (see
+ * signalk-server/src/ports.ts): plain HTTP on `settings.port`, and — when
+ * `ssl:true` — HTTPS on `settings.sslport`. The plugin passes those as
+ * `endpoints` (HTTP first); we build a candidate per (host × endpoint).
  *
- * @param skPort SignalK's HTTP port (app.config.settings.port ?? 3000).
+ * Order is host-major (prefer loopback → gateway → LAN → hostname), then the
+ * endpoints in the given order (HTTP before HTTPS), verified on rootless
+ * podman/pasta in the Phase 0 spike (host.containers.internal reaches the host):
+ *   host 1. 127.0.0.1               — wins under shared-netns (container:<self-id>)
+ *   host 2. host.containers.internal — bare-metal + installer host-net (podman
+ *           host-gateway → host IP; podman also aliases host.docker.internal)
+ *   host 3. host.docker.internal    — docker deployments
+ *   host 4. each non-internal IPv4  — host LAN IPs / SK-container IPs (bridge)
+ *   host 5. <HOST_HOSTNAME>         — last resort via name resolution
+ *
+ * @param endpoints SignalK's endpoints in preference order (HTTP first).
  * @param hostName override for tests; defaults to os.hostname().
  * @param ifaces override for tests; defaults to os.networkInterfaces().
  */
 export function computeTargetCandidates(
-  skPort: number,
+  endpoints: SignalKEndpoint[],
   hostName: string = hostname(),
   ifaces: ReturnType<typeof networkInterfaces> = networkInterfaces()
 ): string[] {
-  const candidates: string[] = [
-    `http://127.0.0.1:${skPort}`,
-    `http://host.containers.internal:${skPort}`,
-    `http://host.docker.internal:${skPort}`
-  ]
+  const hosts: string[] = ['127.0.0.1', 'host.containers.internal', 'host.docker.internal']
+  for (const ip of nonInternalIpv4s(ifaces)) hosts.push(ip)
+  if (hostName) hosts.push(hostName)
 
-  for (const ip of nonInternalIpv4s(ifaces)) {
-    candidates.push(`http://${ip}:${skPort}`)
+  const candidates: string[] = []
+  for (const host of hosts) {
+    for (const ep of endpoints) {
+      candidates.push(`${ep.scheme}://${host}:${ep.port}`)
+    }
   }
 
-  if (hostName) {
-    candidates.push(`http://${hostName}:${skPort}`)
-  }
-
-  // De-dup while preserving order (127.0.0.1 or a host IP could recur).
+  // De-dup while preserving order (a host IP could recur; loopback etc.).
   return [...new Set(candidates)]
 }
 

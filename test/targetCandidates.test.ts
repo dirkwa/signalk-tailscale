@@ -19,16 +19,18 @@ const iface = (address: string, internal = false): IfaceInfo => ({
   cidr: `${address}/24`
 })
 
+const http = (port: number) => [{ scheme: 'http', port }]
+
 describe('computeTargetCandidates', () => {
   it('always leads with 127.0.0.1, host.containers.internal, host.docker.internal', () => {
-    const c = computeTargetCandidates(3000, 'boat', { lo: [iface('127.0.0.1', true)] })
+    const c = computeTargetCandidates(http(3000), 'boat', { lo: [iface('127.0.0.1', true)] })
     expect(c[0]).toBe('http://127.0.0.1:3000')
     expect(c[1]).toBe('http://host.containers.internal:3000')
     expect(c[2]).toBe('http://host.docker.internal:3000')
   })
 
   it('bare-metal / installer: includes the host LAN IP and hostname', () => {
-    const c = computeTargetCandidates(3000, 'myboat', {
+    const c = computeTargetCandidates(http(3000), 'myboat', {
       eth0: [iface('192.168.0.10')],
       lo: [iface('127.0.0.1', true)]
     })
@@ -37,7 +39,7 @@ describe('computeTargetCandidates', () => {
   })
 
   it('bridge deployment: keeps the SK-container IP (reachable on the shared net), drops container bridges', () => {
-    const c = computeTargetCandidates(3000, 'boat', {
+    const c = computeTargetCandidates(http(3000), 'boat', {
       eth0: [iface('10.88.0.5')], // podman bridge — dropped
       docker0: [iface('172.17.0.1')], // docker bridge — dropped
       sk0: [iface('172.20.0.3')] // shared user net — kept
@@ -48,12 +50,31 @@ describe('computeTargetCandidates', () => {
   })
 
   it('respects a non-default SignalK port', () => {
-    const c = computeTargetCandidates(8375, 'boat', { lo: [iface('127.0.0.1', true)] })
+    const c = computeTargetCandidates(http(8375), 'boat', { lo: [iface('127.0.0.1', true)] })
     expect(c[0]).toBe('http://127.0.0.1:8375')
   })
 
+  it('handles an HTTP+HTTPS deployment (ssl:true, port:80, sslport:443) — http first per host', () => {
+    const c = computeTargetCandidates(
+      [
+        { scheme: 'http', port: 80 },
+        { scheme: 'https', port: 443 }
+      ],
+      'boat',
+      { lo: [iface('127.0.0.1', true)] }
+    )
+    // Host-major, endpoints per host in order → http then https for 127.0.0.1.
+    expect(c[0]).toBe('http://127.0.0.1:80')
+    expect(c[1]).toBe('https://127.0.0.1:443')
+    expect(c[2]).toBe('http://host.containers.internal:80')
+    expect(c[3]).toBe('https://host.containers.internal:443')
+    // Both schemes reach the host-gateway alias.
+    expect(c).toContain('http://host.containers.internal:80')
+    expect(c).toContain('https://host.containers.internal:443')
+  })
+
   it('de-dups repeated addresses', () => {
-    const c = computeTargetCandidates(3000, 'boat', {
+    const c = computeTargetCandidates(http(3000), 'boat', {
       eth0: [iface('192.168.0.10')],
       eth1: [iface('192.168.0.10')]
     })
