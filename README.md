@@ -6,7 +6,8 @@ fighting marina-WiFi or LTE carrier-grade NAT. Powered by
 [Tailscale](https://tailscale.com).
 
 Install → open the webapp → scan the QR / click the login link → your boat
-appears in your tailnet → open `https://signalk-<boat>.tailXXXX.ts.net`.
+appears in your tailnet → open `http://signalk-<boat>.tailXXXX.ts.net` from any
+device on your Tailscale account.
 
 ## How it works
 
@@ -21,7 +22,7 @@ rootless podman, docker, the universal installer, Windows/WSL2) and uses
 The plugin's webapp is the whole UI. It talks to the container through a
 reverse proxy on the SignalK origin, so it inherits SignalK's admin auth — and
 because the Tailscale login link lets whoever opens it claim your boat into
-*their* tailnet, those routes are **admin-only**.
+_their_ tailnet, those routes are **admin-only**.
 
 ## Setup
 
@@ -32,8 +33,36 @@ because the Tailscale login link lets whoever opens it claim your boat into
    Sign in with Google / Apple / Microsoft / GitHub (a tailnet is created for
    new accounts).
 4. Install the Tailscale app on your phone or laptop (same account) and open the
-   URL shown on the **Dashboard**. `http://` works immediately; `https://` after
-   one click to enable HTTPS certificates (the webapp links you straight there).
+   URL shown on the **Dashboard**.
+
+That's it — with a default SignalK install you can now reach and log in to your
+boat from anywhere. Use the `.ts.net` **hostname** (e.g.
+`http://signalk-myboat.tailXXXX.ts.net`), not the raw `100.x` Tailscale IP —
+`tailscale serve` answers by hostname, so the bare IP returns "404 page not
+found".
+
+### HTTPS and login
+
+Which URL you use depends on whether your SignalK server has SSL enabled
+(**Server → Settings → "Use HTTPS"** in the admin):
+
+- **SSL off (the default) — nothing extra to do.** Open the `http://…ts.net`
+  URL and log in. It just works: the traffic is already encrypted end-to-end by
+  Tailscale (WireGuard), and login/sessions work over the http URL.
+- **SSL on** — your SignalK redirects all http to https, so you must use the
+  `https://…ts.net` URL, which needs Tailscale's MagicDNS HTTPS certificates
+  enabled **once** for your tailnet: open
+  <https://login.tailscale.com/admin/dns> and click **Enable HTTPS** (this is a
+  tailnet-wide account setting a node can't toggle for you). The Dashboard's
+  HTTPS hint links you straight there. Within a minute the `https://…ts.net` URL
+  works and you can log in.
+  - Why: with SSL on, SignalK marks its session cookie `Secure`, so the browser
+    only keeps it over `https`. The `http` URL will show the login page but
+    login "does nothing" until you switch to the `https` URL.
+
+> **Tip for the simplest setup:** if you don't otherwise need SignalK's own
+> HTTPS on the boat LAN, leave SSL off — Tailscale provides the encryption, and
+> everything is zero-config.
 
 ### Optional: reach the whole boat LAN
 
@@ -62,7 +91,8 @@ Most behaviour is hard-enabled (zero-config). Plugin config exposes:
 
 - **managedContainer** (default on) — run the companion container. Disable to
   point at an external `signalk-tailscale-server` via **externalUrl**.
-- **imageTag** — `auto` tracks the tested server version; pin or float to override.
+- **imageTag** — `auto` (default) tracks the `:latest` server image; pin a
+  concrete version (e.g. `0.1.2`) to opt out of latest-tracking.
 - **deviceHostname** — the name your boat shows as (default `signalk-<host>`).
 - **enableServe** (default on) — expose SignalK over the tailnet.
 - **advertiseRoutes / acceptRoutes** — subnet-router opt-ins (also in the webapp).

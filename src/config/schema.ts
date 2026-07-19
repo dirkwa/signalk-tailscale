@@ -37,7 +37,8 @@ export const ConfigSchema = Type.Object({
     title: 'Expose SignalK over Tailscale',
     description:
       'When enabled (default), the plugin runs `tailscale serve` so your SignalK server is ' +
-      'reachable at https://<device>.<tailnet>.ts.net from any device on your tailnet.'
+      'reachable at http(s)://<device>.<tailnet>.ts.net from any device on your tailnet ' +
+      '(http when SignalK SSL is off — the default; https when SSL is on).'
   }),
   advertiseRoutes: Type.Array(Type.String(), {
     default: [],
