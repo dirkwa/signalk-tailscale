@@ -1,6 +1,6 @@
 {
   "name": "signalk-tailscale",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Zero-config boat VPN: reach your SignalK server from anywhere over Tailscale, no port forwarding or DDNS",
   "main": "plugin/index.js",
   "type": "module",
