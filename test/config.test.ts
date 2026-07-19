@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { SCHEMA_DEFAULTS, ConfigSchema } from '../src/config/schema.js'
-import { resolveImageTag, TAILSCALE_SERVER_VERSION } from '../src/config/image-tag.js'
+import { resolveImageTag, AUTO_TAG } from '../src/config/image-tag.js'
 
 describe('SCHEMA_DEFAULTS', () => {
   it('hard-enables the zero-config behaviour', () => {
@@ -21,8 +21,9 @@ describe('SCHEMA_DEFAULTS', () => {
 })
 
 describe('resolveImageTag', () => {
-  it('maps "auto" to the pinned server version', () => {
-    expect(resolveImageTag('auto')).toBe(TAILSCALE_SERVER_VERSION)
+  it('maps "auto" to the latest tag (tracks :latest on ghcr.io)', () => {
+    expect(resolveImageTag('auto')).toBe(AUTO_TAG)
+    expect(AUTO_TAG).toBe('latest')
   })
 
   it('passes an explicit tag through unchanged', () => {
