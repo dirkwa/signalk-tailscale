@@ -13,7 +13,7 @@ import {
   VolumeIssue
 } from './types.js'
 import { ConfigSchema, Config, SCHEMA_DEFAULTS } from './config/schema.js'
-import { resolveImageTag } from './config/image-tag.js'
+import { resolveImageTag, isFloatingTag } from './config/image-tag.js'
 
 const TS_IMAGE = 'ghcr.io/dirkwa/signalk-tailscale-server'
 const CONTAINER_NAME = 'signalk-tailscale-server'
@@ -468,17 +468,55 @@ export default function (app: TailscaleServerAPI): Plugin {
 
     try {
       const desiredImage = `${TS_IMAGE}:${resolvedTag}`
+      const floating = isFloatingTag(resolvedTag)
+
+      // For a FLOATING tag (e.g. `latest`), pull first so the local copy is
+      // current — otherwise a server restart just re-runs the stale cached
+      // image and never picks up a newer `:latest` from the registry.
+      if (floating) {
+        try {
+          app.setPluginStatus(`Pulling ${desiredImage}...`)
+          await containers.pullImage(desiredImage)
+        } catch (pullErr) {
+          // Offline-first: a failed pull (no internet) must not block startup —
+          // fall through and run whatever is cached locally.
+          app.debug(`pull ${desiredImage} failed (non-fatal, using cached): ${errMsg(pullErr)}`)
+        }
+      }
+
       let usedRecreate = false
       if (containers.recreate) {
         try {
           const live = await containers.listContainers()
           const found = live.find((c) => c.name === `sk-${CONTAINER_NAME}`)
-          if (found && found.image !== desiredImage) {
-            app.setPluginStatus(`Recreating ${found.image} → ${desiredImage}...`)
-            await containers.recreate(CONTAINER_NAME, buildContainerConfig(resolvedTag), {
-              onVolumeIssue
-            })
-            usedRecreate = true
+          if (found) {
+            // Pinned tag: a name mismatch means drift. Floating tag: the name
+            // always matches, so compare the running container's image DIGEST
+            // against the freshly-pulled tag's digest.
+            let drifted = found.image !== desiredImage
+            if (!drifted && floating && typeof containers.getImageDigest === 'function') {
+              try {
+                const [runningDigest, latestDigest] = await Promise.all([
+                  containers.getImageDigest(`sk-${CONTAINER_NAME}`),
+                  containers.getImageDigest(desiredImage)
+                ])
+                drifted = Boolean(runningDigest && latestDigest && runningDigest !== latestDigest)
+                if (drifted) {
+                  app.debug(
+                    `floating-tag drift: running ${runningDigest?.slice(0, 19)} ≠ ${desiredImage} ${latestDigest?.slice(0, 19)}`
+                  )
+                }
+              } catch (digestErr) {
+                app.debug(`digest compare failed (non-fatal): ${errMsg(digestErr)}`)
+              }
+            }
+            if (drifted) {
+              app.setPluginStatus(`Recreating ${found.image} → ${desiredImage}...`)
+              await containers.recreate(CONTAINER_NAME, buildContainerConfig(resolvedTag), {
+                onVolumeIssue
+              })
+              usedRecreate = true
+            }
           }
         } catch (probeErr) {
           app.debug(`self-heal probe failed (non-fatal): ${errMsg(probeErr)}`)
