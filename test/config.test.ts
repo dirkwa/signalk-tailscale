@@ -43,6 +43,6 @@ describe('isFloatingTag', () => {
     expect(isFloatingTag('latest')).toBe(true)
     expect(isFloatingTag('edge')).toBe(true)
     expect(isFloatingTag('main')).toBe(true)
-    expect(isFloatingTag(resolveImageTag('auto'))).toBe(true) // auto → latest
+    expect(isFloatingTag(resolveImageTag('auto'))).toBe(true)
   })
 })
