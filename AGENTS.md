@@ -129,3 +129,11 @@ configures serve.
   `remoteEntry.js` served fine (200). A working `remoteEntry.js` is ~3.3 KB with
   no `*ssr*` files in `public/`. Dependabot ignores `>=1.16`; don't bump it
   until the admin host supports the newer output.
+- **`react-dom/client` is shared with a bundled fallback** (`import:
+  'react-dom/client'` in `vite.config.ts`), NOT `import: false`. `main.tsx` uses
+  `createRoot` from `react-dom/client`, which MF treats as its own share key.
+  Without an explicit entry MF derives a host-only stub and throws
+  `[Module Federation] Shared module 'react-dom/client' must be provided by host`
+  on admin builds that register only `react-dom`. `singleton: true` keeps the
+  React runtime the host's; only the thin `createRoot` wrapper is bundled. Do
+  NOT change it to `import: false`.
