@@ -46,8 +46,8 @@ config.
 - [src/types.ts](src/types.ts) — signalk-container API mirror (kept identical to
   signalk-backup's) + the shim REST contract types.
 - [src/config/](src/config/) — TypeBox schema (tiny, hard-enabled defaults) +
-  `image-tag.ts` (`TAILSCALE_SERVER_VERSION` = what `auto` resolves to; bump it
-  when a new server image ships).
+  `image-tag.ts` (`imageTag: "auto"` → `:latest`, so new server images reach
+  boats without a plugin bump; pin a concrete version to opt out).
 - [webapp/](webapp/) — Vite Module Federation, exposes `./AppPanel`. Views:
   ConnectCard (login link + QR), Dashboard (URLs + peer count + HttpsHint),
   SettingsPanel (subnet router + updates + logout danger zone). Status is live
@@ -107,9 +107,12 @@ configures serve.
   tag to release; keep the tag == `package.json` version. `public/` and `plugin/`
   are gitignored but packed at publish time via `prepublishOnly: npm run build`
   and the `files` allowlist.
-- When a new `signalk-tailscale-server` image ships, bump `TAILSCALE_SERVER_VERSION`
-  in [src/config/image-tag.ts](src/config/image-tag.ts) (what `imageTag: "auto"`
-  resolves to) — independent of this plugin's own version.
+- `imageTag: "auto"` resolves to `:latest` (see
+  [src/config/image-tag.ts](src/config/image-tag.ts)), so a new
+  `signalk-tailscale-server` release reaches boats on the next pull/recreate —
+  no plugin bump needed. The update service reports a `floating` tag and detects
+  updates by image digest (not semver). Users who want a fixed version pin
+  `imageTag` to a concrete tag in plugin config.
 
 ## Gotchas verified on real hardware
 
