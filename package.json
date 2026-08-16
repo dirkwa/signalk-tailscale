@@ -1,6 +1,6 @@
 {
   "name": "signalk-tailscale",
-  "version": "0.1.6",
+  "version": "1.0.0",
   "description": "Zero-config boat VPN: reach your SignalK server from anywhere over Tailscale, no port forwarding or DDNS",
   "main": "plugin/index.js",
   "type": "module",
@@ -34,6 +34,9 @@
   },
   "files": [
     "plugin/**/*",
+    "LICENSE.md",
+    "LICENSE-Apache-2.0-through-v0.x.txt",
+    "CONTRIBUTING.md",
     "public/**/*",
     "assets/**/*",
     "docs/**/*"
@@ -77,5 +80,5 @@
     "type": "git",
     "url": "git+https://github.com/dirkwa/signalk-tailscale.git"
   },
-  "license": "Apache-2.0"
+  "license": "SEE LICENSE IN LICENSE.md"
 }
