@@ -7,11 +7,18 @@ import { computeTargetCandidates, suggestSubnetRoutes } from './targetCandidates
 import {
   TailscaleServerAPI,
   ContainerConfig,
-  ContainerManagerApi,
   ContainerResourceLimits,
   DesiredConfig,
   VolumeIssue
 } from './types.js'
+import {
+  resolveEndpoint,
+  waitForEndpointReady,
+  isManagedMode,
+  getContainerManager,
+  waitForContainerManager,
+  errMsg
+} from 'signalk-container-helper'
 import { ConfigSchema, Config, SCHEMA_DEFAULTS } from './config/schema.js'
 import { resolveImageTag, isFloatingTag } from './config/image-tag.js'
 
@@ -40,72 +47,6 @@ const DEFAULT_RESOURCES: ContainerResourceLimits = {
   memory: '384m',
   memorySwap: '384m',
   pidsLimit: 256
-}
-
-function getContainerManager(): ContainerManagerApi | undefined {
-  return globalThis.__signalk_containerManager
-}
-
-/**
- * Wait for signalk-container's API to be FULLY ready on globalThis — both the
- * manager object exposed AND runtime detection complete. signalk-container
- * publishes `__signalk_containerManager` synchronously during its own start()
- * but detects the runtime async, so there's a ~1-2s window where getRuntime()
- * returns null; this plugin loads before it alphabetically and races into that
- * window unless we wait for both signals.
- */
-async function waitForContainerManager(
-  maxMs: number,
-  intervalMs = 500
-): Promise<ContainerManagerApi | undefined> {
-  const deadline = Date.now() + maxMs
-  while (Date.now() < deadline) {
-    const m = getContainerManager()
-    if (m && m.getRuntime()) return m
-    await new Promise((r) => setTimeout(r, intervalMs))
-  }
-  return getContainerManager()
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
-/**
- * Resolve the actual host:port the shim container is reachable at.
- * resolveContainerAddress is the documented, authoritative answer in every
- * deployment shape (including the in-container shared-netns path where the
- * right URL is 127.0.0.1:3020 and no host-port mapping exists). Falls through
- * to a listContainers().ports parse for the legacy bare-metal-SK port-drift
- * case. Returns null when neither can produce an address.
- */
-async function resolveActualAddress(
-  containers: ContainerManagerApi,
-  debug?: (msg: string) => void
-): Promise<string | null> {
-  try {
-    const apiAnswer = await containers.resolveContainerAddress(CONTAINER_NAME, API_PORT)
-    if (apiAnswer) return apiAnswer
-  } catch (err) {
-    debug?.(`resolveContainerAddress threw: ${errMsg(err)}`)
-  }
-
-  try {
-    const list = await containers.listContainers()
-    const found = list.find((c) => c.name === `sk-${CONTAINER_NAME}`)
-    if (found && Array.isArray((found as unknown as { ports?: string[] }).ports)) {
-      const ports = (found as unknown as { ports: string[] }).ports
-      const wanted = `->${API_PORT}/tcp`
-      for (const entry of ports) {
-        if (!entry.endsWith(wanted)) continue
-        const hostPart = entry.slice(0, -wanted.length)
-        if (hostPart.includes(':')) return hostPart
-      }
-    }
-  } catch (err) {
-    debug?.(`listContainers fallback threw: ${errMsg(err)}`)
-  }
-  return null
 }
 
 /**
@@ -420,40 +361,49 @@ export default function (app: TailscaleServerAPI): Plugin {
   }
 
   async function asyncStart(settings: Config): Promise<void> {
-    if (!settings.managedContainer) {
+    if (!isManagedMode(settings.managedContainer)) {
       // External-server mode: skip the container, point at a user URL.
-      const url = settings.externalUrl.trim()
-      if (!url) {
-        app.setPluginError(
-          'managedContainer is disabled but externalUrl is empty. Set externalUrl in plugin config.'
-        )
+      let endpoint
+      try {
+        endpoint = await resolveEndpoint({
+          managed: settings.managedContainer,
+          externalUrl: settings.externalUrl,
+          productName: 'signalk-tailscale-server',
+          defaultPort: API_PORT
+        })
+      } catch (err) {
+        app.setPluginError(errMsg(err))
         return
       }
       // Only wire up `client` + `containerAddress` after readiness, so on
       // failure the proxy isn't left pointing at an unreachable upstream
       // (`/status` keeps reporting not-ready, and /api/* returns 503 not 502).
-      const pending = new ShimClient(url)
+      const pending = new ShimClient(endpoint.baseUrl)
       try {
-        await pending.waitForReady(15_000)
+        await waitForEndpointReady(endpoint, { path: '/api/health', maxMs: 15_000 })
         client = pending
-        containerAddress = url
+        containerAddress = endpoint.baseUrl
         await pushConfig()
         startConfigPushTimer()
-        app.setPluginStatus(`Connected to external signalk-tailscale-server at ${url}`)
+        app.setPluginStatus(`Connected to external signalk-tailscale-server at ${endpoint.baseUrl}`)
       } catch (err) {
         app.setPluginError(`External signalk-tailscale-server unreachable: ${errMsg(err)}`)
       }
       return
     }
 
-    const containers = await waitForContainerManager(120_000)
+    // Two-phase: the manager appears on globalThis before it has finished
+    // detecting a runtime, and the two absences need different messages.
+    const { manager: containers, runtime } = await waitForContainerManager({
+      timeoutMs: 120_000
+    })
     if (!containers) {
       app.setPluginError(
         'signalk-container plugin not available after 120s. Install and enable it, then restart this plugin.'
       )
       return
     }
-    if (!containers.getRuntime()) {
+    if (!runtime) {
       app.setPluginError(
         'No container runtime detected (Podman or Docker). Install one and restart signalk-container.'
       )
@@ -543,19 +493,26 @@ export default function (app: TailscaleServerAPI): Plugin {
         app.debug(`updates.register failed (non-fatal): ${errMsg(err)}`)
       }
 
-      const addr = await resolveActualAddress(containers, (m) => {
-        app.debug(m)
+      const endpoint = await resolveEndpoint({
+        managed: settings.managedContainer,
+        containerName: CONTAINER_NAME,
+        manager: containers,
+        port: API_PORT,
+        productName: 'signalk-tailscale-server',
+        debug: (m) => {
+          app.debug(m)
+        }
       })
-      if (!addr) {
-        throw new Error('Could not resolve container address')
-      }
-      containerAddress = `http://${addr}`
-
-      // client stays null until /api/health succeeds so /status's
-      // `ready: client !== null` reports a truthful upstream-reachable signal.
-      const pending = new ShimClient(containerAddress)
+      // Neither `client` nor `containerAddress` is published until
+      // /api/health answers: `client !== null` is what /status reports as
+      // ready, and `containerAddress` is what the proxy uses as its upstream.
+      // Publishing the address early makes /api/* return 502 from an
+      // unreachable upstream instead of a clean 503. The external-server
+      // branch above orders it the same way.
+      const pending = new ShimClient(endpoint.baseUrl)
       app.setPluginStatus('Waiting for Tailscale engine to become ready...')
-      await pending.waitForReady(60_000)
+      await waitForEndpointReady(endpoint, { path: '/api/health', maxMs: 60_000 })
+      containerAddress = endpoint.baseUrl
       client = pending
 
       // Push desired config once ready, then keep it fresh on an interval.
