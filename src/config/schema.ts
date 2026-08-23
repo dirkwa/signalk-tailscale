@@ -1,16 +1,25 @@
 import { Type, Static } from '@sinclair/typebox'
+import { managedModeSchema } from 'signalk-container-helper/schema'
+
+// The managed/self-hosted switch, shared with every other container plugin.
+// Spliced with Type.Unsafe because the fragments are plain JSON Schema: the
+// helper has no runtime dependencies and cannot depend on either TypeBox
+// package (consumers are split between `typebox` 1.x and `@sinclair/typebox`).
+// A bare spread compiles under 1.x and fails here.
+const MODE = managedModeSchema({
+  // "Tailscale" rather than the image name — this is form copy the operator
+  // reads; urlTitle keeps the URL field naming the server it points at.
+  productName: 'Tailscale',
+  image: 'ghcr.io/dirkwa/signalk-tailscale-server',
+  exampleUrl: 'http://192.168.1.50:3020',
+  urlTitle: 'External signalk-tailscale-server URL'
+})
 
 // Tiny schema — most behaviour is hard-enabled (zero-config product). The
 // subnet-router fields (advertiseRoutes/acceptRoutes) are the only real
 // opt-ins and are surfaced through the webapp SettingsPanel, not RJSF chrome.
 export const ConfigSchema = Type.Object({
-  managedContainer: Type.Boolean({
-    default: true,
-    title: 'Manage Tailscale container via signalk-container',
-    description:
-      'When enabled (default), the plugin pulls and runs ghcr.io/dirkwa/signalk-tailscale-server. ' +
-      'Disable to point at an external signalk-tailscale-server instance via "External URL".'
-  }),
+  managedContainer: Type.Unsafe<boolean>(MODE.managedContainer),
   imageTag: Type.String({
     default: 'auto',
     title: 'Container image tag',
@@ -18,13 +27,7 @@ export const ConfigSchema = Type.Object({
       '"auto" (default) tracks the signalk-tailscale-server version this plugin release was tested against. ' +
       'Pin to a specific version (e.g. "0.1.0") or use a floating tag (e.g. "latest") to override.'
   }),
-  externalUrl: Type.String({
-    default: '',
-    title: 'External signalk-tailscale-server URL',
-    description:
-      'Used only when managedContainer is disabled. e.g. http://192.168.1.50:3020. ' +
-      'Leave blank when managing the container.'
-  }),
+  externalUrl: Type.Unsafe<string>(MODE.externalUrl),
   deviceHostname: Type.String({
     default: '',
     title: 'Tailscale device hostname',
@@ -60,9 +63,10 @@ export type Config = Static<typeof ConfigSchema>
 // SignalK uses schema `default` only to seed the form, not the runtime config —
 // spread these in start(). See AGENTS.md gotchas.
 export const SCHEMA_DEFAULTS: Config = {
-  managedContainer: true,
+  // managedContainer + externalUrl come from the shared fragment, so the
+  // defaults cannot drift from the schema they were declared in.
+  ...MODE.defaults,
   imageTag: 'auto',
-  externalUrl: '',
   deviceHostname: '',
   enableServe: true,
   advertiseRoutes: [],
