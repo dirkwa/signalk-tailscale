@@ -7,7 +7,6 @@ import { computeTargetCandidates, suggestSubnetRoutes } from './targetCandidates
 import {
   TailscaleServerAPI,
   ContainerConfig,
-  ContainerManagerApi,
   ContainerResourceLimits,
   DesiredConfig,
   VolumeIssue
@@ -49,18 +48,6 @@ const DEFAULT_RESOURCES: ContainerResourceLimits = {
   memorySwap: '384m',
   pidsLimit: 256
 }
-
-
-
-
-/**
- * Resolve the actual host:port the shim container is reachable at.
- * resolveContainerAddress is the documented, authoritative answer in every
- * deployment shape (including the in-container shared-netns path where the
- * right URL is 127.0.0.1:3020 and no host-port mapping exists). Falls through
- * to a listContainers().ports parse for the legacy bare-metal-SK port-drift
- * case. Returns null when neither can produce an address.
- */
 
 /**
  * SignalK's own listening endpoints, in the order the shim should prefer them
@@ -398,9 +385,7 @@ export default function (app: TailscaleServerAPI): Plugin {
         containerAddress = endpoint.baseUrl
         await pushConfig()
         startConfigPushTimer()
-        app.setPluginStatus(
-          `Connected to external signalk-tailscale-server at ${endpoint.baseUrl}`
-        )
+        app.setPluginStatus(`Connected to external signalk-tailscale-server at ${endpoint.baseUrl}`)
       } catch (err) {
         app.setPluginError(`External signalk-tailscale-server unreachable: ${errMsg(err)}`)
       }

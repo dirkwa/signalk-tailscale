@@ -31,7 +31,6 @@ export class ShimClient {
     return body.data as T
   }
 
-
   getStatus(): Promise<StatusSnapshot> {
     return this.json<StatusSnapshot>('/api/status')
   }
