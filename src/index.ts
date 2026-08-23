@@ -503,13 +503,16 @@ export default function (app: TailscaleServerAPI): Plugin {
           app.debug(m)
         }
       })
-      containerAddress = endpoint.baseUrl
-
-      // client stays null until /api/health succeeds so /status's
-      // `ready: client !== null` reports a truthful upstream-reachable signal.
-      const pending = new ShimClient(containerAddress)
+      // Neither `client` nor `containerAddress` is published until
+      // /api/health answers: `client !== null` is what /status reports as
+      // ready, and `containerAddress` is what the proxy uses as its upstream.
+      // Publishing the address early makes /api/* return 502 from an
+      // unreachable upstream instead of a clean 503. The external-server
+      // branch above orders it the same way.
+      const pending = new ShimClient(endpoint.baseUrl)
       app.setPluginStatus('Waiting for Tailscale engine to become ready...')
       await waitForEndpointReady(endpoint, { path: '/api/health', maxMs: 60_000 })
+      containerAddress = endpoint.baseUrl
       client = pending
 
       // Push desired config once ready, then keep it fresh on an interval.
