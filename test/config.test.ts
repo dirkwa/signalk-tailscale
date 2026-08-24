@@ -14,9 +14,50 @@ describe('SCHEMA_DEFAULTS', () => {
   })
 
   it('covers every property declared in ConfigSchema', () => {
-    const schemaKeys = Object.keys(ConfigSchema.properties)
+    // externalUrl is deliberately NOT in `properties` — it lives in
+    // `dependencies` so the form only renders it when the managed-container
+    // toggle is off. It still needs a default, so fold it in here rather than
+    // dropping the check.
+    const dep = (
+      ConfigSchema as unknown as {
+        dependencies: {
+          managedContainer: { oneOf: { properties: Record<string, unknown> }[] }
+        }
+      }
+    ).dependencies
+    const conditionalKeys = dep.managedContainer.oneOf.flatMap((b) =>
+      Object.keys(b.properties).filter((k) => k !== 'managedContainer')
+    )
+    const schemaKeys = [...Object.keys(ConfigSchema.properties), ...conditionalKeys]
     const defaultKeys = Object.keys(SCHEMA_DEFAULTS)
     expect(new Set(defaultKeys)).toEqual(new Set(schemaKeys))
+  })
+
+  it('renders externalUrl only when the container is not managed', () => {
+    // The reported bug: the field showed with its "traffic leaves this host"
+    // warning even while signalk-container managed the container.
+    expect(ConfigSchema.properties).not.toHaveProperty('externalUrl')
+    const dep = (
+      ConfigSchema as unknown as {
+        dependencies: {
+          managedContainer: {
+            oneOf: {
+              properties: {
+                managedContainer: { const: boolean }
+              } & Record<string, unknown>
+            }[]
+          }
+        }
+      }
+    ).dependencies
+    const branches = dep.managedContainer.oneOf
+    expect(branches).toHaveLength(2)
+    const [managed, external] = branches
+    if (!managed || !external) throw new Error('expected two oneOf branches')
+    expect(managed.properties.managedContainer.const).toBe(true)
+    expect(managed.properties).not.toHaveProperty('externalUrl')
+    expect(external.properties.managedContainer.const).toBe(false)
+    expect(external.properties).toHaveProperty('externalUrl')
   })
 })
 
