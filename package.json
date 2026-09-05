@@ -48,7 +48,7 @@
   "dependencies": {
     "@sinclair/typebox": "^0.34.0",
     "qrcode": "^1.5.4",
-    "signalk-container-helper": "^0.10.0"
+    "signalk-container-helper": "^0.11.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
